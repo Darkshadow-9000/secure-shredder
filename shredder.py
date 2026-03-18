@@ -1,6 +1,7 @@
 import os
 import subprocess
 import sys
+import shutil
 
 def show_help():
     """Logic: Print a clear menu explaining how to use the tool."""
@@ -37,7 +38,10 @@ def secure_cleanup(path, use_u_flag=False):
 
     if os.path.isfile(path):
         print(f"[*] Securely wiping file...")
-        subprocess.run(shred_command + [path])
+        result = subprocess.run(shred_command + [path])
+        if result.returncode != 0:
+            print(f"[-] Error: Failed to shred {path}")
+            return
         print("[+] Done.")
         return
 
@@ -48,17 +52,34 @@ def secure_cleanup(path, use_u_flag=False):
         for root, dirs, files in os.walk(path, topdown=False):
             for name in files:
                 file_path = os.path.join(root, name)
-                # Silently run shred
-                subprocess.run(shred_command + [file_path])
-                file_count += 1
+                # Run shred with error checking
+                result = subprocess.run(shred_command + [file_path], capture_output=True)
+                if result.returncode != 0:
+                    print(f"[-] Warning: Failed to shred {file_path}")
+                    if use_u_flag:
+                        # Force delete if shred fails
+                        try:
+                            os.remove(file_path)
+                        except Exception as e:
+                            print(f"[-] Error removing {file_path}: {e}")
+                else:
+                    file_count += 1
 
             if use_u_flag:
                 for name in dirs:
-                    os.rmdir(os.path.join(root, name))
+                    dir_path = os.path.join(root, name)
+                    try:
+                        os.rmdir(dir_path)
+                    except OSError as e:
+                        print(f"[-] Warning: Could not remove {dir_path}: {e}")
 
         if use_u_flag:
-            os.rmdir(path)
-            print(f"[+] Cleaned {file_count} files and removed directory successfully.")
+            try:
+                os.rmdir(path)
+                print(f"[+] Cleaned {file_count} files and removed directory successfully.")
+            except OSError as e:
+                print(f"[-] Error: Could not remove root directory {path}: {e}")
+                print(f"[+] Cleaned {file_count} files, but directory still contains items.")
         else:
             print(f"[+] Successfully overrode {file_count} files.")
 
